@@ -33,17 +33,22 @@ enum syntype {
     rpar,
     uhoh,
     eof,
-    numexpr
+    numexpr,
+    bin
 }
 
-class syntoken {
+class syntoken : synnode {
     public syntype type { get; }
     public int pos { get; }
     public string text { get; }
     public object val { get; }
 
-    public syntoken(syntype type, int pos, string text, object val) { 
+    public syntoken(syntype type, int pos, string text, object val) {
         this.type = type; this.text = text; this.pos = pos; this.val = val;
+    }
+
+    public override IEnumerable<synnode> getchildren() { 
+        return Enumerable.Empty<synnode>();
     }
 }
 
@@ -112,6 +117,10 @@ class lexer {
 
 abstract class synnode { 
     public abstract syntype type { get; }
+
+    public abstract IEnumerable<synnode> getchildren() { 
+    
+    }
 }
 
 abstract class exprsyn : synnode { 
@@ -119,10 +128,34 @@ abstract class exprsyn : synnode {
 }
 
 sealed class numsyn : exprsyn {
-    public numsyn(syntoken numtok) { 
+    public numsyn(syntoken numtok) {
+        this.numtok = numtok;
     }
 
     public override syntype type => syntype.numexpr;
+    public syntoken numtok { get; }
+
+    public override IEnumerable<synnode> getchildren() {
+        yield return numtok;
+    }
+}
+
+sealed class binexprsyn : exprsyn {
+    public binexprsyn(exprsyn l, syntoken oper, exprsyn r) {
+        this.l = l; this.r = r; this.oper = oper;
+    }
+
+    public exprsyn l { get; }
+    public syntoken oper { get; }
+    public exprsyn r { get; }
+
+    public override syntype type => syntype.bin;
+
+    public override IEnumerable<synnode> getchildren() {
+        yield return l;
+        yield return oper;
+        yield return r;
+    }
 }
 
 class parser {
@@ -156,4 +189,34 @@ class parser {
     }
 
     syntoken cur => peek(0);
+
+    syntoken nextok() {
+        var _cur = cur;
+        _pos++;
+        return _cur;
+    }
+
+    syntoken match(syntype type) {
+        if (cur.type == type)
+            return nextok();
+
+        return new syntoken(type, cur.pos, null, null);
+    }
+
+    public exprsyn parse() {
+        var l = parsepriexpr();
+
+        while (cur == syntype.plus || cur == syntype.minus) {
+            var oper = nextok();
+            var r = parsepriexpr();
+            l = new binexprsyn(l, oper, r);
+        }
+
+        return l;
+    }
+
+    exprsyn parsepriexpr() {
+        var numtok = match(syntype.num);
+        return new numsyn(numtok);
+    }
 }
