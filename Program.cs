@@ -7,18 +7,40 @@
             if (string.IsNullOrWhiteSpace(line))
                 return;
 
-            var lexer = new lexer(line);
-            while (true) {
-                var tok = lexer.nextok();
-                if (tok.type == syntype.eof)
-                    break;
-                Console.Write($"{tok.type}: '{tok.text}'");
-                if (tok.val != null)
-                    Console.Write($" {tok.val}");
+            var parser = new parser(line);
+            var expr = parser.parse();
 
-                Console.WriteLine();
-            }
+            pp(expr);
         }
+    }
+
+    static void pp(synnode node, string ind = "", bool last = true) {
+        //└──
+        //├──
+        //|
+
+        var mark = last ? "└──" : "├──";
+
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.Write(ind);
+        Console.Write(mark);
+        Console.ForegroundColor = ConsoleColor.White;
+
+        Console.Write(node.type);
+
+        if (node is syntoken t && t.val != null) {
+            Console.Write(" ");
+            Console.Write(t.val);
+        }
+
+        Console.WriteLine();
+
+        ind += last ? "    " : "|   ";
+
+        var lastkid = node.getchildren().LastOrDefault();
+
+        foreach (var chi in node.getchildren())
+            pp(chi, ind, chi == lastkid);
     }
 }
 
@@ -38,7 +60,7 @@ enum syntype {
 }
 
 class syntoken : synnode {
-    public syntype type { get; }
+    public override syntype type { get; }
     public int pos { get; }
     public string text { get; }
     public object val { get; }
@@ -118,9 +140,7 @@ class lexer {
 abstract class synnode { 
     public abstract syntype type { get; }
 
-    public abstract IEnumerable<synnode> getchildren() { 
-    
-    }
+    public abstract IEnumerable<synnode> getchildren();
 }
 
 abstract class exprsyn : synnode { 
@@ -206,7 +226,7 @@ class parser {
     public exprsyn parse() {
         var l = parsepriexpr();
 
-        while (cur == syntype.plus || cur == syntype.minus) {
+        while (cur.type == syntype.plus || cur.type == syntype.minus) {
             var oper = nextok();
             var r = parsepriexpr();
             l = new binexprsyn(l, oper, r);
