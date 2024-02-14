@@ -88,7 +88,8 @@ enum syntype {
     eof,
     numexpr,
     bin,
-    parenexpr
+    parenexpr,
+    unary
 }
 
 sealed class syntoken : synnode {
@@ -215,6 +216,22 @@ sealed class binexprsyn : exprsyn {
     }
 }
 
+sealed class unaryexprsyn : exprsyn {
+    public unaryexprsyn(syntoken oper, exprsyn operand) {
+        this.oper = oper; this.operand = operand;
+    }
+
+    public syntoken oper { get; }
+    public exprsyn operand { get; }
+
+    public override syntype type => syntype.unary;
+
+    public override IEnumerable<synnode> getchildren() {
+        yield return oper;
+        yield return operand;
+    }
+}
+
 sealed class parensyn : exprsyn {
     public parensyn(syntoken l, exprsyn expr, syntoken r) {
         this.l = l; this.expr = expr; this.r = r;
@@ -258,6 +275,17 @@ internal static class synfacts {
             case syntype.plus:
             case syntype.minus:
                 return 1;
+
+            default:
+                return 0;
+        }
+    }
+
+    public static int getunaryoperprec(this syntype type) {
+        switch (type) {
+            case syntype.plus:
+            case syntype.minus:
+                return 3;
 
             default:
                 return 0;
@@ -322,7 +350,15 @@ internal sealed class parser {
     }
 
     exprsyn parseexpr(int parprec = 0) {
-        var l = parsepriexpr();
+        exprsyn l;
+        var unaryoperprec = cur.type.getunaryoperprec();
+
+        if (unaryoperprec != 0 && unaryoperprec >= parprec) {
+            var opertok = nextok();
+            var operand = parseexpr(unaryoperprec);
+            l = new unaryexprsyn(opertok, operand);
+        } else
+            l = parsepriexpr();
 
         while (true) {
             var prec = cur.type.getbinoperprec();
@@ -367,6 +403,19 @@ class evaler {
 
         if (root is numsyn n)
             return (int)n.numtok.val;
+
+        if (root is unaryexprsyn u) {
+            var operand = evalexpr(u.operand);
+
+            switch (u.oper.type) {
+                case syntype.plus:
+                    return operand;
+                case syntype.minus:
+                    return -operand;
+            }
+
+            throw new Exception($"unexpected unary oper {u.oper.type}");
+        }
 
         if (root is binexprsyn b) {
             var l = evalexpr(b.l);
