@@ -8,9 +8,24 @@
                 return;
 
             var parser = new parser(line);
-            var expr = parser.parse();
+            var syntree = parser.parse();
 
-            pp(expr);
+            pp(syntree.root);
+
+            if (syntree.diags.Any())
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+
+                foreach (var diag in syntree.diags)
+                    Console.WriteLine(diag);
+
+                Console.ForegroundColor = ConsoleColor.White;
+            }
+            else {
+                var e = new evaler(syntree.root);
+                var res = e.eval();
+                Console.WriteLine(res);
+            }
         }
     }
 
@@ -77,8 +92,11 @@ class syntoken : synnode {
 class lexer {
     readonly string _text;
     int _pos;
+    List<string> _diags = new List<string>();
 
     public lexer(string text) { _text = text; }
+
+    public IEnumerable<string> diags => _diags;
 
     char cur {
         get {
@@ -105,7 +123,8 @@ class lexer {
                 nex();
             var len = _pos - star;
             var tex = _text.Substring(star, len);
-            int.TryParse(tex, out var val);
+            if (!int.TryParse(tex, out var val))
+                _diags.Add($"{_text} isnt a valid int32");
             return new syntoken(syntype.num, star, tex, val);
         }
 
@@ -133,6 +152,7 @@ class lexer {
                 return new syntoken(syntype.rpar, _pos++, ")", null);
         }
 
+        _diags.Add($"err: bad char in: '{cur}'");
         return new syntoken(syntype.uhoh, _pos++, _text.Substring(_pos - 1, 1), null);
     }
 }
@@ -178,8 +198,19 @@ sealed class binexprsyn : exprsyn {
     }
 }
 
+sealed class syntree {
+    public syntree(IEnumerable<string> diags, exprsyn root, syntoken eof) {
+        this.diags = diags.ToArray(); this.root = root; this.eof = eof;
+    }
+
+    public IReadOnlyList<string> diags { get; }
+    public exprsyn root { get; }
+    public syntoken eof { get; }
+}
+
 class parser {
     readonly syntoken[] _toks;
+    List<string> _diags = new List<string>();
     int _pos;
 
     public parser(string text) { 
@@ -197,6 +228,7 @@ class parser {
         } while (tok.type != syntype.eof);
 
         _toks = toks.ToArray();
+        _diags.AddRange(lex.diags);
     }
 
     syntoken peek(int off) {
@@ -207,6 +239,8 @@ class parser {
 
         return _toks[idx];
     }
+
+    public IEnumerable<string> diags => _diags;
 
     syntoken cur => peek(0);
 
@@ -220,13 +254,32 @@ class parser {
         if (cur.type == type)
             return nextok();
 
+        _diags.Add($"err: unexpected tok <{cur.type}>, expected <{type}>");
         return new syntoken(type, cur.pos, null, null);
     }
 
-    public exprsyn parse() {
+    public syntree parse() {
+        var expr = parseterm();
+        var eof = match(syntype.eof);
+        return new syntree(_diags, expr, eof);
+    }
+
+    public exprsyn parseterm() {
         var l = parsepriexpr();
 
         while (cur.type == syntype.plus || cur.type == syntype.minus) {
+            var oper = nextok();
+            var r = parsefac();
+            l = new binexprsyn(l, oper, r);
+        }
+
+        return l;
+    }
+
+    public exprsyn parsefac() {
+        var l = parsepriexpr();
+
+        while (cur.type == syntype.mult || cur.type == syntype.div) {
             var oper = nextok();
             var r = parsepriexpr();
             l = new binexprsyn(l, oper, r);
@@ -238,5 +291,45 @@ class parser {
     exprsyn parsepriexpr() {
         var numtok = match(syntype.num);
         return new numsyn(numtok);
+    }
+}
+
+class evaler {
+    readonly exprsyn _root;
+
+    public evaler(exprsyn root) { 
+        this._root = root;
+    }
+
+    public int eval() {
+        return evalexpr(_root);
+    }
+
+    int evalexpr(exprsyn root) {
+        //bin expr
+        //num expr
+
+        if (root is numsyn n)
+            return (int)n.numtok.val;
+
+        if (root is binexprsyn b) {
+            var l = evalexpr(b.l);
+            var r = evalexpr(b.r);
+
+            switch (b.oper.type) {
+                case syntype.plus:
+                    return l + r;
+                case syntype.minus:
+                    return l - r;
+                case syntype.mult:
+                    return l * r;
+                case syntype.div:
+                    return l / r;
+            }
+
+            throw new Exception($"unexpected bin oper {b.oper.type}");
+        }
+
+        throw new Exception($"unexpected node {root.type}");
     }
 }
