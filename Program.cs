@@ -1,4 +1,8 @@
-﻿class main {
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+
+class main {
     static void Main() {
         while (true) {
             Console.Write("> ");
