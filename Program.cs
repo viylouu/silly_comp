@@ -299,39 +299,46 @@ internal sealed class parser {
     }
 
     public syntree parse() {
-        var expr = parseterm();
+        var expr = parseexpr();
         var eof = match(syntype.eof);
         return new syntree(_diags, expr, eof);
     }
 
-    public exprsyn parseterm() {
-        var l = parsefac();
+    exprsyn parseexpr(int parprec = 0) {
+        var l = parsepriexpr();
 
-        while (cur.type == syntype.plus || cur.type == syntype.minus) {
-            var oper = nextok();
-            var r = parsefac();
-            l = new binexprsyn(l, oper, r);
+        while (true) {
+            var prec = getbinoperprec(cur.type);
+
+            if (prec == 0 || prec <= parprec) break;
+
+            var opertok = nextok();
+            var r = parseexpr(prec);
+            l = new binexprsyn(l, opertok, r);
         }
 
         return l;
     }
 
-    public exprsyn parsefac() {
-        var l = parsepriexpr();
+    static int getbinoperprec(syntype type) {
+        switch (type) {
+            case syntype.mult:
+            case syntype.div:
+                return 2;
 
-        while (cur.type == syntype.mult || cur.type == syntype.div) {
-            var oper = nextok();
-            var r = parsepriexpr();
-            l = new binexprsyn(l, oper, r);
+            case syntype.plus:
+            case syntype.minus:
+                return 1;
+
+            default:
+                return 0;
         }
-
-        return l;
     }
 
     exprsyn parsepriexpr() {
         if (cur.type == syntype.lpar) {
             var l = nextok();
-            var expr = parseterm();
+            var expr = parseexpr();
             var r = match(syntype.rpar);
             return new parensyn(l, expr, r);
         }
