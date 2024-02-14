@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 
-class main {
+internal class main {
     static void Main() {
-        bool showtree = false;
+        var showtree = false;
 
         while (true) {
             Console.Write("> ");
@@ -35,7 +35,7 @@ class main {
                 foreach (var diag in _syntree.diags)
                     Console.WriteLine(diag);
 
-                Console.ForegroundColor = ConsoleColor.White;
+                Console.ResetColor();
             }
             else {
                 var e = new evaler(_syntree.root);
@@ -55,7 +55,7 @@ class main {
         Console.ForegroundColor = ConsoleColor.DarkGray;
         Console.Write(ind);
         Console.Write(mark);
-        Console.ForegroundColor = ConsoleColor.White;
+        Console.ResetColor();
 
         Console.Write(node.type);
 
@@ -66,7 +66,7 @@ class main {
 
         Console.WriteLine();
 
-        ind += last ? "    " : "|   ";
+        ind += last ? "   " : "|  ";
 
         var lastkid = node.getchildren().LastOrDefault();
 
@@ -91,7 +91,7 @@ enum syntype {
     parenexpr
 }
 
-class syntoken : synnode {
+sealed class syntoken : synnode {
     public override syntype type { get; }
     public int pos { get; }
     public string text { get; }
@@ -106,7 +106,7 @@ class syntoken : synnode {
     }
 }
 
-class lexer {
+internal sealed class lexer {
     readonly string _text;
     int _pos;
     List<string> _diags = new List<string>();
@@ -248,7 +248,7 @@ sealed class syntree {
     }
 }
 
-class parser {
+internal sealed class parser {
     readonly syntoken[] _toks;
     List<string> _diags = new List<string>();
     int _pos;
