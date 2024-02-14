@@ -5,6 +5,8 @@ using System.Net.Http.Headers;
 
 class main {
     static void Main() {
+        bool showtree = false;
+
         while (true) {
             Console.Write("> ");
 
@@ -12,22 +14,32 @@ class main {
             if (string.IsNullOrWhiteSpace(line))
                 return;
 
+            if (line == "#showtree") {
+                showtree = !showtree;
+
+                Console.WriteLine(showtree?"showing trees" : "not showing trees");
+
+                continue;
+            }
+            if (line == "#clr") { Console.Clear(); continue; }
+
             var parser = new parser(line);
-            var syntree = parser.parse();
+            var _syntree = syntree.parse(line);
 
-            pp(syntree.root);
+            if(showtree)
+                pp(_syntree.root);
 
-            if (syntree.diags.Any())
+            if (_syntree.diags.Any())
             {
                 Console.ForegroundColor = ConsoleColor.Red;
 
-                foreach (var diag in syntree.diags)
+                foreach (var diag in _syntree.diags)
                     Console.WriteLine(diag);
 
                 Console.ForegroundColor = ConsoleColor.White;
             }
             else {
-                var e = new evaler(syntree.root);
+                var e = new evaler(_syntree.root);
                 var res = e.eval();
                 Console.WriteLine(res);
             }
@@ -230,6 +242,11 @@ sealed class syntree {
     public IReadOnlyList<string> diags { get; }
     public exprsyn root { get; }
     public syntoken eof { get; }
+
+    public static syntree parse(string text) {
+        var parser = new parser(text);
+        return parser.parse();
+    }
 }
 
 class parser {
