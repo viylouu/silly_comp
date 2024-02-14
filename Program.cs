@@ -248,6 +248,23 @@ sealed class syntree {
     }
 }
 
+internal static class synfacts { 
+    public static int getbinoperprec(this syntype type) {
+        switch (type) {
+            case syntype.mult:
+            case syntype.div:
+                return 2;
+
+            case syntype.plus:
+            case syntype.minus:
+                return 1;
+
+            default:
+                return 0;
+        }
+    }
+}
+
 internal sealed class parser {
     readonly syntoken[] _toks;
     List<string> _diags = new List<string>();
@@ -308,7 +325,7 @@ internal sealed class parser {
         var l = parsepriexpr();
 
         while (true) {
-            var prec = getbinoperprec(cur.type);
+            var prec = cur.type.getbinoperprec();
 
             if (prec == 0 || prec <= parprec) break;
 
@@ -318,21 +335,6 @@ internal sealed class parser {
         }
 
         return l;
-    }
-
-    static int getbinoperprec(syntype type) {
-        switch (type) {
-            case syntype.mult:
-            case syntype.div:
-                return 2;
-
-            case syntype.plus:
-            case syntype.minus:
-                return 1;
-
-            default:
-                return 0;
-        }
     }
 
     exprsyn parsepriexpr() {
