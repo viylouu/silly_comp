@@ -390,7 +390,7 @@ class evaler {
     readonly exprsyn _root;
 
     public evaler(exprsyn root) { 
-        this._root = root;
+        _root = root;
     }
 
     public int eval() {
