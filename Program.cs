@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http.Headers;
 
 class main {
     static void Main() {
@@ -75,7 +76,8 @@ enum syntype {
     uhoh,
     eof,
     numexpr,
-    bin
+    bin,
+    parenexpr
 }
 
 class syntoken : synnode {
@@ -202,6 +204,24 @@ sealed class binexprsyn : exprsyn {
     }
 }
 
+sealed class parensyn : exprsyn {
+    public parensyn(syntoken l, exprsyn expr, syntoken r) {
+        this.l = l; this.expr = expr; this.r = r;
+    }
+
+    public syntoken l { get; }
+    public exprsyn expr { get; }
+    public syntoken r { get; }
+
+    public override syntype type => syntype.parenexpr;
+
+    public override IEnumerable<synnode> getchildren() {
+        yield return l;
+        yield return expr;
+        yield return r;
+    }
+}
+
 sealed class syntree {
     public syntree(IEnumerable<string> diags, exprsyn root, syntoken eof) {
         this.diags = diags.ToArray(); this.root = root; this.eof = eof;
@@ -269,7 +289,7 @@ class parser {
     }
 
     public exprsyn parseterm() {
-        var l = parsepriexpr();
+        var l = parsefac();
 
         while (cur.type == syntype.plus || cur.type == syntype.minus) {
             var oper = nextok();
@@ -293,6 +313,13 @@ class parser {
     }
 
     exprsyn parsepriexpr() {
+        if (cur.type == syntype.lpar) {
+            var l = nextok();
+            var expr = parseterm();
+            var r = match(syntype.rpar);
+            return new parensyn(l, expr, r);
+        }
+
         var numtok = match(syntype.num);
         return new numsyn(numtok);
     }
@@ -333,6 +360,9 @@ class evaler {
 
             throw new Exception($"unexpected bin oper {b.oper.type}");
         }
+
+        if (root is parensyn p)
+            return evalexpr(p.expr);
 
         throw new Exception($"unexpected node {root.type}");
     }
