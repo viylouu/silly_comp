@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection.Emit;
 
 internal class main {
     static void Main() {
@@ -439,5 +440,144 @@ class evaler {
             return evalexpr(p.expr);
 
         throw new Exception($"unexpected node {root.type}");
+    }
+}
+
+internal abstract class boundnode { 
+    public abstract boundnodetype type { get; }
+
+}
+
+internal enum boundnodetype {
+    unary,
+    num
+}
+
+internal abstract class boundexpr : boundnode { 
+    public abstract Type type_ { get; }
+}
+
+internal enum boundunaryopertype { 
+    ident,
+    negate
+}
+
+internal sealed class boundnumexpr : boundexpr {
+    public boundnumexpr(object val) {
+        this.val = val;
+    }
+
+    public object val { get; }
+
+    public override Type type_ => val.GetType();
+    public override boundnodetype type => boundnodetype.num;
+}
+
+internal sealed class boundunaryexpr : boundexpr {
+    public boundunaryexpr(boundunaryopertype opertype, boundexpr operand) { 
+        this.opertype = opertype; this.operand = operand;
+    }
+
+    public boundunaryopertype opertype { get; }
+    public boundexpr operand { get; }
+
+    public override Type type_ => operand.type_;
+    public override boundnodetype type => boundnodetype.unary;
+}
+
+internal enum boundbinopertype { 
+    add,
+    sub,
+    mul,
+    div,
+}
+
+internal sealed class boundbinexpr : boundexpr {
+    public boundbinexpr(boundexpr l, boundbinopertype opertype, boundexpr r) {
+        this.l = l; this.opertype = opertype; this.r = r;
+    }
+
+    public boundexpr l { get; }
+    public boundbinopertype opertype { get; }
+    public boundexpr r { get; }
+
+    public override Type type_ => l.type_;
+    public override boundnodetype type => boundnodetype.unary;
+}
+
+internal sealed class binder {
+    readonly List<string> _diags = new List<string>();
+    
+    public IEnumerable<string> diags => _diags;
+
+    public boundexpr bindexpr(exprsyn syn) {
+        switch (syn.type) {
+            case syntype.bin:
+                return bindbinexpr((binexprsyn)syn);
+            case syntype.unary:
+                return bindunaryexpr((unaryexprsyn)syn);
+            case syntype.numexpr:
+                return bindnumexpr((numsyn)syn);
+            default:
+                throw new Exception($"unexpected syntax {syn.type}");
+        }
+    }
+
+    boundexpr bindnumexpr(numsyn syn) {
+        var val = syn.numtok.val as int? ?? 0;
+        return new boundnumexpr(val);
+    }
+
+    boundexpr bindunaryexpr(unaryexprsyn syn) {
+        var boundoperand = bindexpr(syn.operand);
+        var boundopertype = bindunaryopertype(syn.oper.type, boundoperand.type_);
+        if (boundopertype == null) {
+            _diags.Add($"unary oper '{syn.oper.text}' is not defined for type {boundoperand.type_}");
+            return boundoperand;
+        }
+        return new boundunaryexpr(boundopertype.Value, boundoperand);
+    }
+
+    boundunaryopertype? bindunaryopertype(syntype type, Type operandtype) {
+        if (operandtype != typeof(int))
+            return null;
+
+        switch (type) {
+            case syntype.plus:
+                return boundunaryopertype.ident;
+            case syntype.minus:
+                return boundunaryopertype.negate;
+            default:
+                throw new Exception($"unexpected unary oper {type}");
+        }
+    }
+
+    boundexpr bindbinexpr(binexprsyn syn) {
+        var boundl = bindexpr(syn.l);
+        var boundr = bindexpr(syn.r);
+        var boundopertype = bindbinopertype(syn.oper.type, boundl.type_, boundr.type_);
+        if (boundopertype == null) {
+            _diags.Add($"bin oper '{syn.oper.text}' is not defined for types {boundl.type_} and {boundr.type_}");
+            return boundl;
+        }
+        return new boundbinexpr(boundl, boundopertype.Value, boundr);
+    }
+
+    boundbinopertype? bindbinopertype(syntype type, Type ltype, Type rtype) {
+        if (ltype != typeof(int) || rtype != typeof(int))
+            return null;
+
+        switch (type) {
+            case syntype.plus:
+                return boundbinopertype.add;
+            case syntype.minus:
+                return boundbinopertype.sub;
+            case syntype.mult:
+                return boundbinopertype.mul;
+            case syntype.div:
+                return boundbinopertype.div;
+            default:
+                throw new Exception($"unexpected bin oper {type}");
+        }
     }
 }
