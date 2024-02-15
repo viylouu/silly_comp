@@ -23,23 +23,25 @@ internal class main {
             }
             if (line == "#clr") { Console.Clear(); continue; }
 
-            var parser = new parser(line);
             var _syntree = syntree.parse(line);
+            var _binder = new binder();
+            var boundexpr = _binder.bindexpr(_syntree.root);
 
-            if(showtree)
+            var diags = _syntree.diags.Concat(_binder.diags).ToArray();
+
+            if (showtree)
                 pp(_syntree.root);
 
-            if (_syntree.diags.Any())
-            {
+            if (diags.Any()) {
                 Console.ForegroundColor = ConsoleColor.Red;
 
-                foreach (var diag in _syntree.diags)
+                foreach (var diag in diags)
                     Console.WriteLine(diag);
 
                 Console.ResetColor();
             }
             else {
-                var e = new evaler(_syntree.root);
+                var e = new evaler(boundexpr);
                 var res = e.eval();
                 Console.WriteLine(res);
             }
@@ -90,7 +92,10 @@ enum syntype {
     numexpr,
     bin,
     parenexpr,
-    unary
+    unary,
+    truekw,
+    falsekw,
+    identif
 }
 
 sealed class syntoken : synnode {
@@ -156,6 +161,16 @@ internal sealed class lexer {
             return new syntoken(syntype.ws, star, tex, null);
         }
 
+        if (char.IsLetter(cur)) {
+            var star = _pos;
+            while (char.IsLetter(cur))
+                nex();
+            var len = _pos - star;
+            var tex = _text.Substring(star, len);
+            var type = synfacts.getkeywordtype(tex);
+            return new syntoken(type, star, tex, null);
+        }
+
         switch (cur) {
             case '+':
                 return new syntoken(syntype.plus, _pos++, "+", null);
@@ -187,12 +202,15 @@ abstract class exprsyn : synnode {
 }
 
 sealed class numsyn : exprsyn {
-    public numsyn(syntoken numtok) {
-        this.numtok = numtok;
+    public numsyn(syntoken numtok) : this(numtok, numtok.val) { }
+
+    public numsyn(syntoken numtok, object val) {
+        this.numtok = numtok; this.val = val;
     }
 
     public override syntype type => syntype.numexpr;
     public syntoken numtok { get; }
+    public object val { get; }
 
     public override IEnumerable<synnode> getchildren() {
         yield return numtok;
@@ -292,6 +310,17 @@ internal static class synfacts {
                 return 0;
         }
     }
+
+    public static syntype getkeywordtype(string tex) {
+        switch (tex) {
+            case "true":
+                return syntype.truekw;
+            case "false":
+                return syntype.falsekw;
+            default:
+                return syntype.identif;
+        }
+    }
 }
 
 internal sealed class parser {
@@ -375,69 +404,77 @@ internal sealed class parser {
     }
 
     exprsyn parsepriexpr() {
-        if (cur.type == syntype.lpar) {
-            var l = nextok();
-            var expr = parseexpr();
-            var r = match(syntype.rpar);
-            return new parensyn(l, expr, r);
-        }
+        switch (cur.type) {
+            case syntype.lpar: {
+                var l = nextok();
+                var expr = parseexpr();
+                var r = match(syntype.rpar);
+                return new parensyn(l, expr, r);
+            }
 
-        var numtok = match(syntype.num);
-        return new numsyn(numtok);
+            case syntype.truekw:
+            case syntype.falsekw: {
+                var kwtok = nextok();
+                var val = cur.type == syntype.truekw;
+                return new numsyn(kwtok, val);
+            }
+
+            default: {
+                var numtok = match(syntype.num);
+                return new numsyn(cur, numtok.val);
+            }
+        }
     }
 }
 
-class evaler {
-    readonly exprsyn _root;
+internal sealed class evaler {
+    readonly boundexpr _root;
 
-    public evaler(exprsyn root) { 
+    public evaler(boundexpr root) { 
         _root = root;
     }
 
-    public int eval() {
+    public object eval() {
         return evalexpr(_root);
     }
 
-    int evalexpr(exprsyn root) {
+    object evalexpr(boundexpr root) {
         //bin expr
         //num expr
 
-        if (root is numsyn n)
-            return (int)n.numtok.val;
+        if (root is boundnumexpr n)
+            return n.val;
 
-        if (root is unaryexprsyn u) {
-            var operand = evalexpr(u.operand);
+        if (root is boundunaryexpr u) {
+            var operand = (int)evalexpr(u.operand);
 
-            switch (u.oper.type) {
-                case syntype.plus:
+            switch (u.opertype) {
+                case boundunaryopertype.ident:
                     return operand;
-                case syntype.minus:
+                case boundunaryopertype.negate:
                     return -operand;
             }
 
-            throw new Exception($"unexpected unary oper {u.oper.type}");
+            throw new Exception($"unexpected unary oper {u.opertype}");
         }
 
-        if (root is binexprsyn b) {
-            var l = evalexpr(b.l);
-            var r = evalexpr(b.r);
+        if (root is boundbinexpr b) {
+            var l = (int)evalexpr(b.l);
+            var r = (int)evalexpr(b.r);
 
-            switch (b.oper.type) {
-                case syntype.plus:
+            switch (b.opertype) {
+                case boundbinopertype.add:
                     return l + r;
-                case syntype.minus:
+                case boundbinopertype.sub:
                     return l - r;
-                case syntype.mult:
+                case boundbinopertype.mul:
                     return l * r;
-                case syntype.div:
+                case boundbinopertype.div:
                     return l / r;
             }
 
-            throw new Exception($"unexpected bin oper {b.oper.type}");
+            throw new Exception($"unexpected bin oper {b.opertype}");
         }
-
-        if (root is parensyn p)
-            return evalexpr(p.expr);
 
         throw new Exception($"unexpected node {root.type}");
     }
@@ -524,7 +561,7 @@ internal sealed class binder {
     }
 
     boundexpr bindnumexpr(numsyn syn) {
-        var val = syn.numtok.val as int? ?? 0;
+        var val = syn.val ?? 0;
         return new boundnumexpr(val);
     }
 
