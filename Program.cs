@@ -95,7 +95,10 @@ enum syntype {
     unary,
     truekw,
     falsekw,
-    identif
+    identif,
+    not,
+    and,
+    or
 }
 
 sealed class syntoken : synnode {
@@ -122,13 +125,15 @@ internal sealed class lexer {
 
     public IEnumerable<string> diags => _diags;
 
-    char cur {
-        get {
-            if (_pos >= _text.Length)
-                return '\0';
+    char cur => peek(0);
+    char ahead => peek(1);
 
-            return _text[_pos];
-        }
+    char peek(int off) {
+        var idx = _pos + off;
+        if (idx >= _text.Length)
+            return '\0';
+
+        return _text[_pos];
     }
 
     void nex() { _pos++; }
@@ -172,6 +177,7 @@ internal sealed class lexer {
         }
 
         switch (cur) {
+            //math
             case '+':
                 return new syntoken(syntype.plus, _pos++, "+", null);
             case '-':
@@ -184,6 +190,19 @@ internal sealed class lexer {
                 return new syntoken(syntype.lpar, _pos++, "(", null);
             case ')':
                 return new syntoken(syntype.rpar, _pos++, ")", null);
+
+            //bools
+            case '!':
+                return new syntoken(syntype.not, _pos++, "!", null);
+            case '&':
+                if (ahead == '&')
+                    return new syntoken(syntype.and, _pos+=2, "&&", null);
+                break;
+            case '|':
+                if (ahead == '|')
+                    return new syntoken(syntype.or, _pos += 2, "||", null);
+                break;
+
         }
 
         _diags.Add($"err: bad char in: '{cur}'");
@@ -289,10 +308,15 @@ internal static class synfacts {
         switch (type) {
             case syntype.mult:
             case syntype.div:
-                return 2;
+                return 4;
 
             case syntype.plus:
             case syntype.minus:
+                return 3;
+
+            case syntype.and:
+                return 2;
+            case syntype.or:
                 return 1;
 
             default:
@@ -304,7 +328,8 @@ internal static class synfacts {
         switch (type) {
             case syntype.plus:
             case syntype.minus:
-                return 3;
+            case syntype.not:
+                return 5;
 
             default:
                 return 0;
@@ -415,7 +440,7 @@ internal sealed class parser {
             case syntype.truekw:
             case syntype.falsekw: {
                 var kwtok = nextok();
-                var val = cur.type == syntype.truekw;
+                var val = kwtok.type == syntype.truekw;
                 return new numsyn(kwtok, val);
             }
 
@@ -446,31 +471,37 @@ internal sealed class evaler {
             return n.val;
 
         if (root is boundunaryexpr u) {
-            var operand = (int)evalexpr(u.operand);
+            var operand = evalexpr(u.operand);
 
             switch (u.opertype) {
                 case boundunaryopertype.ident:
-                    return operand;
+                    return (int)operand;
                 case boundunaryopertype.negate:
-                    return -operand;
+                    return -(int)operand;
+                case boundunaryopertype.lognegate:
+                    return !(bool)operand;
             }
 
             throw new Exception($"unexpected unary oper {u.opertype}");
         }
 
         if (root is boundbinexpr b) {
-            var l = (int)evalexpr(b.l);
-            var r = (int)evalexpr(b.r);
+            var l = evalexpr(b.l);
+            var r = evalexpr(b.r);
 
             switch (b.opertype) {
                 case boundbinopertype.add:
-                    return l + r;
+                    return (int)l + (int)r;
                 case boundbinopertype.sub:
-                    return l - r;
+                    return (int)l - (int)r;
                 case boundbinopertype.mul:
-                    return l * r;
+                    return (int)l * (int)r;
                 case boundbinopertype.div:
-                    return l / r;
+                    return (int)l / (int)r;
+                case boundbinopertype.logand:
+                    return (bool)l && (bool)r;
+                case boundbinopertype.logor:
+                    return (bool)l || (bool)r;
             }
 
             throw new Exception($"unexpected bin oper {b.opertype}");
@@ -496,7 +527,8 @@ internal abstract class boundexpr : boundnode {
 
 internal enum boundunaryopertype { 
     ident,
-    negate
+    negate,
+    lognegate
 }
 
 internal sealed class boundnumexpr : boundexpr {
@@ -527,6 +559,8 @@ internal enum boundbinopertype {
     sub,
     mul,
     div,
+    logand,
+    logor,
 }
 
 internal sealed class boundbinexpr : boundexpr {
@@ -576,17 +610,23 @@ internal sealed class binder {
     }
 
     boundunaryopertype? bindunaryopertype(syntype type, Type operandtype) {
-        if (operandtype != typeof(int))
-            return null;
-
-        switch (type) {
-            case syntype.plus:
-                return boundunaryopertype.ident;
-            case syntype.minus:
-                return boundunaryopertype.negate;
-            default:
-                throw new Exception($"unexpected unary oper {type}");
+        if (operandtype == typeof(int)) { 
+            switch (type) {
+                case syntype.plus:
+                    return boundunaryopertype.ident;
+                case syntype.minus:
+                    return boundunaryopertype.negate;
+            }
         }
+
+        if (operandtype == typeof(bool)) { 
+            switch (type) {
+                case syntype.not:
+                    return boundunaryopertype.lognegate;
+            }
+        }
+
+        return null;
     }
 
     boundexpr bindbinexpr(binexprsyn syn) {
@@ -601,20 +641,28 @@ internal sealed class binder {
     }
 
     boundbinopertype? bindbinopertype(syntype type, Type ltype, Type rtype) {
-        if (ltype != typeof(int) || rtype != typeof(int))
-            return null;
-
-        switch (type) {
-            case syntype.plus:
-                return boundbinopertype.add;
-            case syntype.minus:
-                return boundbinopertype.sub;
-            case syntype.mult:
-                return boundbinopertype.mul;
-            case syntype.div:
-                return boundbinopertype.div;
-            default:
-                throw new Exception($"unexpected bin oper {type}");
+        if (ltype == typeof(int) && rtype == typeof(int)) {
+            switch (type) {
+                case syntype.plus:
+                    return boundbinopertype.add;
+                case syntype.minus:
+                    return boundbinopertype.sub;
+                case syntype.mult:
+                    return boundbinopertype.mul;
+                case syntype.div:
+                    return boundbinopertype.div;
+            }
         }
+
+        if (ltype == typeof(bool) && rtype == typeof(bool)) {
+            switch (type) {
+                case syntype.and:
+                    return boundbinopertype.logand;
+                case syntype.or:
+                    return boundbinopertype.logor;
+            }
+        }
+
+        return null;
     }
 }
