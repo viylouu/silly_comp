@@ -666,3 +666,62 @@ internal sealed class binder {
         return null;
     }
 }
+
+internal sealed class boundbinoper {
+    boundbinoper(syntype stype, boundbinopertype btype, Type type) : this(stype, btype, type, type, type) { }
+
+    boundbinoper(syntype stype, boundbinopertype type, Type ltype, Type rtype, Type restype) {
+        mstype = stype; mtype = type; mltype = ltype; mrtype = rtype; mrestype = restype;
+    }
+
+    public syntype mstype { get; }
+    public boundbinopertype mtype { get; }
+    public Type mltype { get; }
+    public Type mrtype { get; }
+    public Type mrestype { get; }
+
+    static boundbinoper[] _opers = {
+        new boundbinoper(syntype.plus, boundbinopertype.add, typeof(int)),
+        new boundbinoper(syntype.minus, boundbinopertype.sub, typeof(int)),
+        new boundbinoper(syntype.mult, boundbinopertype.mul, typeof(int)),
+        new boundbinoper(syntype.div, boundbinopertype.div, typeof(int)),
+
+        new boundbinoper(syntype.and, boundbinopertype.logand, typeof(bool)),
+        new boundbinoper(syntype.or, boundbinopertype.logor, typeof(bool)),
+    };
+
+    public static boundbinoper bind(syntype type, Type ltype, Type rtype) {
+        foreach (var oper in _opers)
+            if (oper.mstype == type && oper.mltype == ltype && oper.mrtype == rtype)
+                return oper;
+
+        return null;
+    }
+}
+
+internal sealed class boundunaryoper {
+    boundunaryoper(syntype stype, boundunaryopertype type, Type operandtype) : this(stype, type, operandtype, operandtype) { }
+
+    boundunaryoper(syntype stype, boundunaryopertype type, Type operandtype, Type restype) {
+        this.stype = stype; this.type = type; this.operandtype = operandtype; this.restype = restype;
+    }
+
+    public syntype stype { get; }
+    public boundunaryopertype type { get; }
+    public Type operandtype { get; }
+    public Type restype { get; }
+
+    static boundunaryoper[] _opers = {
+        new boundunaryoper(syntype.not, boundunaryopertype.lognegate, typeof(bool)),
+        new boundunaryoper(syntype.plus, boundunaryopertype.ident, typeof(int)),
+        new boundunaryoper(syntype.minus, boundunaryopertype.negate, typeof(int)),
+    };
+
+    public static boundunaryoper bind(syntype type, Type operandtype) {
+        foreach (var oper in _opers)
+            if (oper.stype == type && oper.operandtype == operandtype)
+                return oper;
+
+        return null;
+    }
+}
