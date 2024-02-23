@@ -98,7 +98,9 @@ enum syntype {
     identif,
     not,
     and,
-    or
+    or,
+    eqto,
+    neqto
 }
 
 sealed class syntoken : synnode {
@@ -193,6 +195,8 @@ internal sealed class lexer {
 
             //bools
             case '!':
+                if (ahead == '=')
+                    return new syntoken(syntype.neqto, _pos += 2, "!=", null);
                 return new syntoken(syntype.not, _pos++, "!", null);
             case '&':
                 if (ahead == '&')
@@ -201,6 +205,10 @@ internal sealed class lexer {
             case '|':
                 if (ahead == '|')
                     return new syntoken(syntype.or, _pos += 2, "||", null);
+                break;
+            case '=':
+                if (ahead == '=')
+                    return new syntoken(syntype.eqto, _pos += 2, "==", null);
                 break;
 
         }
@@ -308,10 +316,14 @@ internal static class synfacts {
         switch (type) {
             case syntype.mult:
             case syntype.div:
-                return 4;
+                return 5;
 
             case syntype.plus:
             case syntype.minus:
+                return 4;
+
+            case syntype.eqto:
+            case syntype.neqto:
                 return 3;
 
             case syntype.and:
@@ -326,10 +338,9 @@ internal static class synfacts {
 
     public static int getunaryoperprec(this syntype type) {
         switch (type) {
-            case syntype.plus:
             case syntype.minus:
             case syntype.not:
-                return 5;
+                return 6;
 
             default:
                 return 0;
@@ -464,16 +475,13 @@ internal sealed class evaler {
     }
 
     object evalexpr(boundexpr root) {
-        //bin expr
-        //num expr
-
         if (root is boundnumexpr n)
             return n.val;
 
         if (root is boundunaryexpr u) {
             var operand = evalexpr(u.operand);
 
-            switch (u.opertype) {
+            switch (u.opertype.type) {
                 case boundunaryopertype.ident:
                     return (int)operand;
                 case boundunaryopertype.negate:
@@ -489,7 +497,7 @@ internal sealed class evaler {
             var l = evalexpr(b.l);
             var r = evalexpr(b.r);
 
-            switch (b.opertype) {
+            switch (b.opertype.mtype) {
                 case boundbinopertype.add:
                     return (int)l + (int)r;
                 case boundbinopertype.sub:
@@ -502,6 +510,10 @@ internal sealed class evaler {
                     return (bool)l && (bool)r;
                 case boundbinopertype.logor:
                     return (bool)l || (bool)r;
+                case boundbinopertype.eqto:
+                    return Equals(l, r);
+                case boundbinopertype.neqto:
+                    return !Equals(l, r);
             }
 
             throw new Exception($"unexpected bin oper {b.opertype}");
@@ -543,14 +555,14 @@ internal sealed class boundnumexpr : boundexpr {
 }
 
 internal sealed class boundunaryexpr : boundexpr {
-    public boundunaryexpr(boundunaryopertype opertype, boundexpr operand) { 
+    public boundunaryexpr(boundunaryoper opertype, boundexpr operand) { 
         this.opertype = opertype; this.operand = operand;
     }
 
-    public boundunaryopertype opertype { get; }
+    public boundunaryoper opertype { get; }
     public boundexpr operand { get; }
 
-    public override Type type_ => operand.type_;
+    public override Type type_ => opertype.restype;
     public override boundnodetype type => boundnodetype.unary;
 }
 
@@ -561,18 +573,20 @@ internal enum boundbinopertype {
     div,
     logand,
     logor,
+    eqto,
+    neqto,
 }
 
 internal sealed class boundbinexpr : boundexpr {
-    public boundbinexpr(boundexpr l, boundbinopertype opertype, boundexpr r) {
+    public boundbinexpr(boundexpr l, boundbinoper opertype, boundexpr r) {
         this.l = l; this.opertype = opertype; this.r = r;
     }
 
     public boundexpr l { get; }
-    public boundbinopertype opertype { get; }
+    public boundbinoper opertype { get; }
     public boundexpr r { get; }
 
-    public override Type type_ => l.type_;
+    public override Type type_ => opertype.mrestype;
     public override boundnodetype type => boundnodetype.unary;
 }
 
@@ -606,7 +620,7 @@ internal sealed class binder {
             _diags.Add($"unary oper '{syn.oper.text}' is not defined for type {boundoperand.type_}");
             return boundoperand;
         }
-        return new boundunaryexpr(boundopertype.type, boundoperand);
+        return new boundunaryexpr(boundopertype, boundoperand);
     }
 
     boundexpr bindbinexpr(binexprsyn syn) {
@@ -617,12 +631,14 @@ internal sealed class binder {
             _diags.Add($"bin oper '{syn.oper.text}' is not defined for types {boundl.type_} and {boundr.type_}");
             return boundl;
         }
-        return new boundbinexpr(boundl, boundopertype.mtype, boundr);
+        return new boundbinexpr(boundl, boundopertype, boundr);
     }
 }
 
 internal sealed class boundbinoper {
     boundbinoper(syntype stype, boundbinopertype btype, Type type) : this(stype, btype, type, type, type) { }
+
+    boundbinoper(syntype stype, boundbinopertype btype, Type operand, Type res) : this(stype, btype, operand, operand, res) { }
 
     boundbinoper(syntype stype, boundbinopertype type, Type ltype, Type rtype, Type restype) {
         mstype = stype; mtype = type; mltype = ltype; mrtype = rtype; mrestype = restype;
@@ -640,8 +656,14 @@ internal sealed class boundbinoper {
         new boundbinoper(syntype.mult, boundbinopertype.mul, typeof(int)),
         new boundbinoper(syntype.div, boundbinopertype.div, typeof(int)),
 
+        new boundbinoper(syntype.eqto, boundbinopertype.eqto, typeof(int), typeof(bool)),
+        new boundbinoper(syntype.neqto, boundbinopertype.neqto, typeof(int), typeof(bool)),
+
         new boundbinoper(syntype.and, boundbinopertype.logand, typeof(bool)),
         new boundbinoper(syntype.or, boundbinopertype.logor, typeof(bool)),
+
+        new boundbinoper(syntype.eqto, boundbinopertype.eqto, typeof(bool)),
+        new boundbinoper(syntype.neqto, boundbinopertype.neqto, typeof(bool)),
     };
 
     public static boundbinoper bind(syntype type, Type ltype, Type rtype) {
