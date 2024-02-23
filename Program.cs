@@ -530,7 +530,8 @@ internal abstract class boundnode {
 
 internal enum boundnodetype {
     unary,
-    num
+    num,
+    bin
 }
 
 internal abstract class boundexpr : boundnode { 
@@ -587,7 +588,7 @@ internal sealed class boundbinexpr : boundexpr {
     public boundexpr r { get; }
 
     public override Type type_ => opertype.mrestype;
-    public override boundnodetype type => boundnodetype.unary;
+    public override boundnodetype type => boundnodetype.bin;
 }
 
 internal sealed class binder {
