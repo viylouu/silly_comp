@@ -22,6 +22,10 @@ internal class main {
                 continue;
             }
             if (line == "#clr") { Console.Clear(); continue; }
+            if (line == "#loadtest") {
+                using (StreamReader sr = new StreamReader("../../../test.silly"))
+                    line = sr.ReadToEnd();
+            }
 
             var _syntree = syntree.parse(line);
             var _binder = new binder();
