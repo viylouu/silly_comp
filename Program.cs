@@ -28,10 +28,10 @@ internal class main {
             }
 
             var _syntree = syntree.parse(line);
-            var _binder = new binder();
-            var boundexpr = _binder.bindexpr(_syntree.root);
+            var _comp = new comp(_syntree);
+            var res = _comp.eval();
 
-            var diags = _syntree.diags.Concat(_binder.diags).ToArray();
+            var diags = res.diags;
 
             if (showtree)
                 pp(_syntree.root);
@@ -44,11 +44,8 @@ internal class main {
 
                 Console.ResetColor();
             }
-            else {
-                var e = new evaler(boundexpr);
-                var res = e.eval();
-                Console.WriteLine(res);
-            }
+            else
+                Console.WriteLine(res.val);
         }
     }
 
@@ -82,7 +79,7 @@ internal class main {
     }
 }
 
-enum syntype {
+public enum syntype {
     num,
     ws,
     plus,
@@ -107,7 +104,7 @@ enum syntype {
     neqto
 }
 
-sealed class syntoken : synnode {
+public sealed class syntoken : synnode {
     public override syntype type { get; }
     public int pos { get; }
     public string text { get; }
@@ -222,13 +219,13 @@ internal sealed class lexer {
     }
 }
 
-abstract class synnode { 
+public abstract class synnode { 
     public abstract syntype type { get; }
 
     public abstract IEnumerable<synnode> getchildren();
 }
 
-abstract class exprsyn : synnode { 
+public abstract class exprsyn : synnode { 
     
 }
 
@@ -300,7 +297,7 @@ sealed class parensyn : exprsyn {
     }
 }
 
-sealed class syntree {
+public sealed class syntree {
     public syntree(IEnumerable<string> diags, exprsyn root, syntoken eof) {
         this.diags = diags.ToArray(); this.root = root; this.eof = eof;
     }
@@ -593,6 +590,36 @@ internal sealed class boundbinexpr : boundexpr {
 
     public override Type type_ => opertype.mrestype;
     public override boundnodetype type => boundnodetype.bin;
+}
+
+public class comp {
+    public comp(syntree syn) { 
+        this.syn = syn;
+    }
+
+    public syntree syn { get; }
+
+    public evalres eval() {
+        var binder = new binder();
+        var boundexpr = binder.bindexpr(syn.root);
+
+        var diags = syn.diags.Concat(binder.diags).ToArray();
+        if (diags.Any())
+            return new evalres(diags, null);
+
+        var evaler = new evaler(boundexpr);
+        var val = evaler.eval();
+        return new evalres(Array.Empty<string>(), val);
+    }
+}
+
+public sealed class evalres {
+    public evalres(IEnumerable<string> diags, object val) {
+        this.diags = diags.ToArray(); this.val = val;
+    }
+
+    public IReadOnlyList<string> diags { get; }
+    public object val { get; }
 }
 
 internal sealed class binder {
