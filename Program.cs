@@ -603,6 +603,8 @@ internal sealed class binder {
                 return bindunaryexpr((unaryexprsyn)syn);
             case syntype.numexpr:
                 return bindnumexpr((numsyn)syn);
+            case syntype.parenexpr:
+                return bindexpr(((parensyn)syn).expr);
             default:
                 throw new Exception($"unexpected syntax {syn.type}");
         }
