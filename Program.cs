@@ -609,26 +609,6 @@ internal sealed class binder {
         return new boundunaryexpr(boundopertype.type, boundoperand);
     }
 
-    boundunaryopertype? bindunaryopertype(syntype type, Type operandtype) {
-        if (operandtype == typeof(int)) { 
-            switch (type) {
-                case syntype.plus:
-                    return boundunaryopertype.ident;
-                case syntype.minus:
-                    return boundunaryopertype.negate;
-            }
-        }
-
-        if (operandtype == typeof(bool)) { 
-            switch (type) {
-                case syntype.not:
-                    return boundunaryopertype.lognegate;
-            }
-        }
-
-        return null;
-    }
-
     boundexpr bindbinexpr(binexprsyn syn) {
         var boundl = bindexpr(syn.l);
         var boundr = bindexpr(syn.r);
@@ -638,32 +618,6 @@ internal sealed class binder {
             return boundl;
         }
         return new boundbinexpr(boundl, boundopertype.mtype, boundr);
-    }
-
-    boundbinopertype? bindbinopertype(syntype type, Type ltype, Type rtype) {
-        if (ltype == typeof(int) && rtype == typeof(int)) {
-            switch (type) {
-                case syntype.plus:
-                    return boundbinopertype.add;
-                case syntype.minus:
-                    return boundbinopertype.sub;
-                case syntype.mult:
-                    return boundbinopertype.mul;
-                case syntype.div:
-                    return boundbinopertype.div;
-            }
-        }
-
-        if (ltype == typeof(bool) && rtype == typeof(bool)) {
-            switch (type) {
-                case syntype.and:
-                    return boundbinopertype.logand;
-                case syntype.or:
-                    return boundbinopertype.logor;
-            }
-        }
-
-        return null;
     }
 }
 
