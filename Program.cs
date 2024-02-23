@@ -1,7 +1,10 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Reflection.Emit;
+using static System.Net.Mime.MediaTypeNames;
 
 internal class main {
     static void Main() {
@@ -122,11 +125,11 @@ public sealed class syntoken : synnode {
 internal sealed class lexer {
     readonly string _text;
     int _pos;
-    List<string> _diags = new List<string>();
+    diagbag _diags = new diagbag();
 
     public lexer(string text) { _text = text; }
 
-    public IEnumerable<string> diags => _diags;
+    public diagbag diags => _diags;
 
     char cur => peek(0);
     char ahead => peek(1);
@@ -156,7 +159,7 @@ internal sealed class lexer {
             var len = _pos - star;
             var tex = _text.Substring(star, len);
             if (!int.TryParse(tex, out var val))
-                _diags.Add($"{_text} isnt a valid int32");
+                _diags.repinvnum(new textspan(star, len), _text, typeof(int));
             return new syntoken(syntype.num, star, tex, val);
         }
 
@@ -214,7 +217,7 @@ internal sealed class lexer {
 
         }
 
-        _diags.Add($"err: bad char in: '{cur}'");
+        _diags.repbadchar(_pos, cur);
         return new syntoken(syntype.uhoh, _pos++, _text.Substring(_pos - 1, 1), null);
     }
 }
@@ -298,11 +301,11 @@ sealed class parensyn : exprsyn {
 }
 
 public sealed class syntree {
-    public syntree(IEnumerable<string> diags, exprsyn root, syntoken eof) {
+    public syntree(IEnumerable<diag> diags, exprsyn root, syntoken eof) {
         this.diags = diags.ToArray(); this.root = root; this.eof = eof;
     }
 
-    public IReadOnlyList<string> diags { get; }
+    public IReadOnlyList<diag> diags { get; }
     public exprsyn root { get; }
     public syntoken eof { get; }
 
@@ -362,7 +365,7 @@ internal static class synfacts {
 
 internal sealed class parser {
     readonly syntoken[] _toks;
-    List<string> _diags = new List<string>();
+    diagbag _diags = new diagbag();
     int _pos;
 
     public parser(string text) { 
@@ -374,9 +377,8 @@ internal sealed class parser {
         do {
             tok = lex.nextok();
 
-            if (tok.type != syntype.ws && tok.type != syntype.uhoh) {
+            if (tok.type != syntype.ws && tok.type != syntype.uhoh)
                 toks.Add(tok);
-            }
         } while (tok.type != syntype.eof);
 
         _toks = toks.ToArray();
@@ -392,7 +394,7 @@ internal sealed class parser {
         return _toks[idx];
     }
 
-    public IEnumerable<string> diags => _diags;
+    public IEnumerable<diag> diags => _diags;
 
     syntoken cur => peek(0);
 
@@ -610,6 +612,55 @@ public class comp {
         var evaler = new evaler(boundexpr);
         var val = evaler.eval();
         return new evalres(Array.Empty<string>(), val);
+    }
+}
+
+public struct textspan {
+    public textspan(int start, int len) { 
+        this.start = start; this.len = len;
+    }
+
+    public int start { get; }
+    public int len { get; }
+    public int end => start + len;
+}
+
+public sealed class diag {
+    public diag(textspan span, string msg) {
+        this.span = span; this.msg = msg;
+    }
+
+    public textspan span { get; }
+    public string msg { get; }
+
+    public override string ToString() => msg;
+}
+
+internal sealed class diagbag : IEnumerable<diag> {
+    readonly List<diag> _diags = new List<diag>();
+
+    public IEnumerator<diag> GetEnumerator() => _diags.GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    void rep(textspan span, string msg) {
+        var diag = new diag(span, msg);
+        _diags.Add(diag);
+    }
+
+    public void repinvnum(textspan span, string text, Type type) {
+        var msg = $"the num {text} isn't a valid {type}";
+        rep(span, msg);
+    }
+
+    public void repbadchar(int pos, char chr) {
+        var span = new textspan(pos, 1);
+        var msg = $"err: bad char inp '{chr}'";
+        rep(span, msg);
+    }
+
+    public void addrange(diagbag diags) {
+        _diags.AddRange(diags._diags);
     }
 }
 
