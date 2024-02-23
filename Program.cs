@@ -601,12 +601,12 @@ internal sealed class binder {
 
     boundexpr bindunaryexpr(unaryexprsyn syn) {
         var boundoperand = bindexpr(syn.operand);
-        var boundopertype = bindunaryopertype(syn.oper.type, boundoperand.type_);
+        var boundopertype = boundunaryoper.bind(syn.oper.type, boundoperand.type_);
         if (boundopertype == null) {
             _diags.Add($"unary oper '{syn.oper.text}' is not defined for type {boundoperand.type_}");
             return boundoperand;
         }
-        return new boundunaryexpr(boundopertype.Value, boundoperand);
+        return new boundunaryexpr(boundopertype.type, boundoperand);
     }
 
     boundunaryopertype? bindunaryopertype(syntype type, Type operandtype) {
@@ -632,12 +632,12 @@ internal sealed class binder {
     boundexpr bindbinexpr(binexprsyn syn) {
         var boundl = bindexpr(syn.l);
         var boundr = bindexpr(syn.r);
-        var boundopertype = bindbinopertype(syn.oper.type, boundl.type_, boundr.type_);
+        var boundopertype = boundbinoper.bind(syn.oper.type, boundl.type_, boundr.type_);
         if (boundopertype == null) {
             _diags.Add($"bin oper '{syn.oper.text}' is not defined for types {boundl.type_} and {boundr.type_}");
             return boundl;
         }
-        return new boundbinexpr(boundl, boundopertype.Value, boundr);
+        return new boundbinexpr(boundl, boundopertype.mtype, boundr);
     }
 
     boundbinopertype? bindbinopertype(syntype type, Type ltype, Type rtype) {
