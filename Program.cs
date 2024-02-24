@@ -112,6 +112,7 @@ public sealed class syntoken : synnode {
     public int pos { get; }
     public string text { get; }
     public object val { get; }
+    public textspan span => new textspan(pos, text.Length);
 
     public syntoken(syntype type, int pos, string text, object val) {
         this.type = type; this.text = text; this.pos = pos; this.val = val;
@@ -382,7 +383,7 @@ internal sealed class parser {
         } while (tok.type != syntype.eof);
 
         _toks = toks.ToArray();
-        _diags.AddRange(lex.diags);
+        _diags.addrange(lex.diags);
     }
 
     syntoken peek(int off) {
@@ -394,7 +395,7 @@ internal sealed class parser {
         return _toks[idx];
     }
 
-    public IEnumerable<diag> diags => _diags;
+    public diagbag diags => _diags;
 
     syntoken cur => peek(0);
 
@@ -408,7 +409,7 @@ internal sealed class parser {
         if (cur.type == type)
             return nextok();
 
-        _diags.Add($"err: unexpected tok <{cur.type}>, expected <{type}>");
+        _diags.repunextok(cur.span, cur.type, type);
         return new syntoken(type, cur.pos, null, null);
     }
 
@@ -611,7 +612,7 @@ public class comp {
 
         var evaler = new evaler(boundexpr);
         var val = evaler.eval();
-        return new evalres(Array.Empty<string>(), val);
+        return new evalres(Array.Empty<diag>(), val);
     }
 }
 
@@ -655,28 +656,43 @@ internal sealed class diagbag : IEnumerable<diag> {
 
     public void repbadchar(int pos, char chr) {
         var span = new textspan(pos, 1);
-        var msg = $"err: bad char inp '{chr}'";
+        var msg = $"bad char inp '{chr}'";
         rep(span, msg);
     }
 
     public void addrange(diagbag diags) {
         _diags.AddRange(diags._diags);
     }
+
+    public void repunextok(textspan span, syntype atype, syntype etype) {
+        var msg = $"unex tok <{atype}>, expects <{etype}>";
+        rep(span, msg);
+    }
+
+    public void repundefunaryoper(textspan span, string opertext, Type operandtype) {
+        var msg = $"unary oper '{opertext}' is not def for type {operandtype}";
+        rep(span, msg);
+    }
+
+    public void repundefbinoper(textspan span, string txt, Type t1, Type t2) {
+        var msg = $"bin oper '{txt}' is not def for types {t1} and {t2}";
+        rep(span, msg);
+    }
 }
 
 public sealed class evalres {
-    public evalres(IEnumerable<string> diags, object val) {
+    public evalres(IEnumerable<diag> diags, object val) {
         this.diags = diags.ToArray(); this.val = val;
     }
 
-    public IReadOnlyList<string> diags { get; }
+    public IReadOnlyList<diag> diags { get; }
     public object val { get; }
 }
 
 internal sealed class binder {
-    readonly List<string> _diags = new List<string>();
+    readonly diagbag _diags = new diagbag();
     
-    public IEnumerable<string> diags => _diags;
+    public diagbag diags => _diags;
 
     public boundexpr bindexpr(exprsyn syn) {
         switch (syn.type) {
@@ -702,7 +718,7 @@ internal sealed class binder {
         var boundoperand = bindexpr(syn.operand);
         var boundopertype = boundunaryoper.bind(syn.oper.type, boundoperand.type_);
         if (boundopertype == null) {
-            _diags.Add($"unary oper '{syn.oper.text}' is not defined for type {boundoperand.type_}");
+            _diags.repundefunaryoper(syn.oper.span, syn.oper.text, boundoperand.type_);
             return boundoperand;
         }
         return new boundunaryexpr(boundopertype, boundoperand);
@@ -713,7 +729,7 @@ internal sealed class binder {
         var boundr = bindexpr(syn.r);
         var boundopertype = boundbinoper.bind(syn.oper.type, boundl.type_, boundr.type_);
         if (boundopertype == null) {
-            _diags.Add($"bin oper '{syn.oper.text}' is not defined for types {boundl.type_} and {boundr.type_}");
+            _diags.repundefbinoper(syn.oper.span, syn.oper.text, boundl.type_, boundr.type_);
             return boundl;
         }
         return new boundbinexpr(boundl, boundopertype, boundr);
