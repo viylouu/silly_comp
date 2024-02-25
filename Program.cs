@@ -40,12 +40,29 @@ internal class main {
                 pp(_syntree.root);
 
             if (diags.Any()) {
-                Console.ForegroundColor = ConsoleColor.Red;
-
-                foreach (var diag in diags)
+                foreach (var diag in diags) {
+                    Console.WriteLine();
+                    Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine(diag);
+                    Console.ResetColor();
 
-                Console.ResetColor();
+                    var pref = line.Substring(0, diag.span.start);
+                    var err = line.Substring(diag.span.start, diag.span.len);
+                    var suf = line.Substring(diag.span.end);
+
+                    Console.Write("   ");
+                    Console.Write(pref);
+
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.Write(err);
+                    Console.ResetColor();
+
+                    Console.Write(suf);
+
+                    Console.WriteLine();
+                }
+
+                Console.WriteLine();
             }
             else
                 Console.WriteLine(res.val);
@@ -153,8 +170,9 @@ internal sealed class lexer {
         if (_pos >= _text.Length)
             return new syntoken(syntype.eof, _pos, "\0", null);
 
+        var star = _pos;
+
         if (char.IsDigit(cur)) {
-            var star = _pos;
             while (char.IsDigit(cur))
                 nex();
             var len = _pos - star;
@@ -165,7 +183,6 @@ internal sealed class lexer {
         }
 
         if (char.IsWhiteSpace(cur)) {
-            var star = _pos;
             while (char.IsWhiteSpace(cur))
                 nex();
             var len = _pos - star;
@@ -174,7 +191,6 @@ internal sealed class lexer {
         }
 
         if (char.IsLetter(cur)) {
-            var star = _pos;
             while (char.IsLetter(cur))
                 nex();
             var len = _pos - star;
@@ -200,20 +216,29 @@ internal sealed class lexer {
 
             //bools
             case '!':
-                if (ahead == '=')
-                    return new syntoken(syntype.neqto, _pos += 2, "!=", null);
-                return new syntoken(syntype.not, _pos++, "!", null);
+                if (ahead == '=') {
+                    _pos += 2;
+                    return new syntoken(syntype.neqto, star, "!=", null);
+                }
+                _pos++;
+                return new syntoken(syntype.not, star, "!", null);
             case '&':
-                if (ahead == '&')
-                    return new syntoken(syntype.and, _pos+=2, "&&", null);
+                if (ahead == '&') {
+                    _pos += 2;
+                    return new syntoken(syntype.and, star, "&&", null);
+                }
                 break;
             case '|':
-                if (ahead == '|')
-                    return new syntoken(syntype.or, _pos += 2, "||", null);
+                if (ahead == '|') {
+                    _pos += 2;
+                    return new syntoken(syntype.or, star, "||", null);
+                }
                 break;
             case '=':
-                if (ahead == '=')
-                    return new syntoken(syntype.eqto, _pos += 2, "==", null);
+                if (ahead == '=') {
+                    _pos += 2;
+                    return new syntoken(syntype.eqto, star, "==", null);
+                }
                 break;
 
         }
